@@ -2,8 +2,20 @@ import React, { useState, useEffect } from "react";
 import axios from "axios";
 import * as XLSX from "xlsx";
 import { saveAs } from "file-saver";
+import {
+  TextField,
+  Button,
+  Table,
+  TableHead,
+  TableRow,
+  TableCell,
+  TableBody,
+  Paper,
+  Typography,
+  Container,
+  Stack
+} from "@mui/material";
 
-// Usamos la variable de entorno
 const API_URL = process.env.REACT_APP_API_URL;
 
 function App() {
@@ -33,7 +45,6 @@ function App() {
       }
       return [...prev, { nombre, cantidad: parseInt(cantidad) }];
     });
-    // Registrar movimiento
     setMovimientos(prev => [
       ...prev,
       { tipo: "Ingreso", nombre, cantidad: parseInt(cantidad), fecha: new Date().toLocaleString() }
@@ -52,12 +63,16 @@ function App() {
       const idx = prev.findIndex(i => i.nombre === nombre);
       if (idx >= 0) {
         const copia = [...prev];
-        copia[idx].cantidad = Math.max(0, copia[idx].cantidad - parseInt(cantidad));
+        const nuevaCantidad = copia[idx].cantidad - parseInt(cantidad);
+        if (nuevaCantidad <= 0) {
+          copia.splice(idx, 1); // elimina el producto si llega a 0
+        } else {
+          copia[idx].cantidad = nuevaCantidad;
+        }
         return copia;
       }
       return prev;
     });
-    // Registrar movimiento
     setMovimientos(prev => [
       ...prev,
       { tipo: "Egreso", nombre, cantidad: parseInt(cantidad), fecha: new Date().toLocaleString() }
@@ -76,58 +91,60 @@ function App() {
   };
 
   return (
-    <div style={{ padding: "2rem", maxWidth: 800 }}>
-      <h1>Inventario</h1>
+    <Container maxWidth="md" sx={{ mt: 4 }}>
+      <Typography variant="h4" gutterBottom>Inventario</Typography>
 
-      <div style={{ display: "flex", gap: "0.5rem", marginBottom: "1rem" }}>
-        <input
-          placeholder="Nombre"
+      <Stack direction="row" spacing={2} mb={3}>
+        <TextField
+          label="Nombre"
           value={nombre}
           onChange={e => setNombre(e.target.value)}
         />
-        <input
+        <TextField
           type="number"
-          placeholder="Cantidad"
+          label="Cantidad"
           value={cantidad}
           onChange={e => setCantidad(e.target.value)}
         />
-        <button onClick={agregar}>Agregar</button>
-        <button onClick={retirar}>Retirar</button>
-      </div>
+        <Button variant="contained" color="success" onClick={agregar}>Agregar</Button>
+        <Button variant="contained" color="error" onClick={retirar}>Retirar</Button>
+      </Stack>
 
-      <h2>Stock actual</h2>
+      <Typography variant="h6">Stock actual</Typography>
       <ul>
         {inventario.map((item, i) => (
           <li key={i}>{item.nombre} — {item.cantidad}</li>
         ))}
       </ul>
 
-      <h2>Movimientos</h2>
-      <table border="1" style={{ width: "100%", marginTop: "1rem" }}>
-        <thead>
-          <tr>
-            <th>Tipo</th>
-            <th>Producto</th>
-            <th>Cantidad</th>
-            <th>Fecha</th>
-          </tr>
-        </thead>
-        <tbody>
-          {movimientos.map((m, i) => (
-            <tr key={i}>
-              <td>{m.tipo}</td>
-              <td>{m.nombre}</td>
-              <td>{m.cantidad}</td>
-              <td>{m.fecha}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      <Typography variant="h6" sx={{ mt: 3 }}>Movimientos</Typography>
+      <Paper sx={{ mt: 1 }}>
+        <Table>
+          <TableHead>
+            <TableRow>
+              <TableCell>Tipo</TableCell>
+              <TableCell>Producto</TableCell>
+              <TableCell>Cantidad</TableCell>
+              <TableCell>Fecha</TableCell>
+            </TableRow>
+          </TableHead>
+          <TableBody>
+            {movimientos.map((m, i) => (
+              <TableRow key={i}>
+                <TableCell>{m.tipo}</TableCell>
+                <TableCell>{m.nombre}</TableCell>
+                <TableCell>{m.cantidad}</TableCell>
+                <TableCell>{m.fecha}</TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </Paper>
 
-      <button onClick={exportarExcel} style={{ marginTop: "1rem" }}>
+      <Button variant="outlined" sx={{ mt: 2 }} onClick={exportarExcel}>
         Exportar a Excel
-      </button>
-    </div>
+      </Button>
+    </Container>
   );
 }
 
