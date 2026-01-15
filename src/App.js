@@ -1,20 +1,26 @@
 import React, { useState, useEffect } from "react";
 import axios from "axios";
+import * as XLSX from "xlsx";
+import { saveAs } from "file-saver";
 
-const API = "https://JavierM22.pythonanywhere.com";
+// Usamos la variable de entorno
+const API_URL = process.env.REACT_APP_API_URL;
 
 function App() {
   const [inventario, setInventario] = useState([]);
+  const [movimientos, setMovimientos] = useState([]);
   const [nombre, setNombre] = useState("");
   const [cantidad, setCantidad] = useState("");
 
   useEffect(() => {
-    axios.get(`${API}/inventario`).then(res => setInventario(res.data));
+    axios.get(`${API_URL}/inventario`)
+      .then(res => setInventario(res.data))
+      .catch(err => console.error("Error cargando inventario:", err));
   }, []);
 
   const agregar = async () => {
     if (!nombre || !cantidad) return;
-    await axios.post(`${API}/agregar`, {
+    await axios.post(`${API_URL}/agregar`, {
       nombre,
       cantidad: parseInt(cantidad)
     });
@@ -27,13 +33,18 @@ function App() {
       }
       return [...prev, { nombre, cantidad: parseInt(cantidad) }];
     });
+    // Registrar movimiento
+    setMovimientos(prev => [
+      ...prev,
+      { tipo: "Ingreso", nombre, cantidad: parseInt(cantidad), fecha: new Date().toLocaleString() }
+    ]);
     setNombre("");
     setCantidad("");
   };
 
   const retirar = async () => {
     if (!nombre || !cantidad) return;
-    await axios.post(`${API}/retirar`, {
+    await axios.post(`${API_URL}/retirar`, {
       nombre,
       cantidad: parseInt(cantidad)
     });
@@ -46,12 +57,26 @@ function App() {
       }
       return prev;
     });
+    // Registrar movimiento
+    setMovimientos(prev => [
+      ...prev,
+      { tipo: "Egreso", nombre, cantidad: parseInt(cantidad), fecha: new Date().toLocaleString() }
+    ]);
     setNombre("");
     setCantidad("");
   };
 
+  const exportarExcel = () => {
+    const hoja = XLSX.utils.json_to_sheet(movimientos);
+    const libro = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(libro, hoja, "Movimientos");
+    const excelBuffer = XLSX.write(libro, { bookType: "xlsx", type: "array" });
+    const blob = new Blob([excelBuffer], { type: "application/octet-stream" });
+    saveAs(blob, "movimientos_inventario.xlsx");
+  };
+
   return (
-    <div style={{ padding: "2rem", maxWidth: 600 }}>
+    <div style={{ padding: "2rem", maxWidth: 800 }}>
       <h1>Inventario</h1>
 
       <div style={{ display: "flex", gap: "0.5rem", marginBottom: "1rem" }}>
@@ -70,11 +95,38 @@ function App() {
         <button onClick={retirar}>Retirar</button>
       </div>
 
+      <h2>Stock actual</h2>
       <ul>
         {inventario.map((item, i) => (
           <li key={i}>{item.nombre} — {item.cantidad}</li>
         ))}
       </ul>
+
+      <h2>Movimientos</h2>
+      <table border="1" style={{ width: "100%", marginTop: "1rem" }}>
+        <thead>
+          <tr>
+            <th>Tipo</th>
+            <th>Producto</th>
+            <th>Cantidad</th>
+            <th>Fecha</th>
+          </tr>
+        </thead>
+        <tbody>
+          {movimientos.map((m, i) => (
+            <tr key={i}>
+              <td>{m.tipo}</td>
+              <td>{m.nombre}</td>
+              <td>{m.cantidad}</td>
+              <td>{m.fecha}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
+      <button onClick={exportarExcel} style={{ marginTop: "1rem" }}>
+        Exportar a Excel
+      </button>
     </div>
   );
 }
