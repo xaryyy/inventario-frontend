@@ -1,151 +1,64 @@
-import React, { useState, useEffect } from "react";
-import axios from "axios";
-import * as XLSX from "xlsx";
-import { saveAs } from "file-saver";
-import {
-  TextField,
-  Button,
-  Table,
-  TableHead,
-  TableRow,
-  TableCell,
-  TableBody,
-  Paper,
-  Typography,
-  Container,
-  Stack
-} from "@mui/material";
+from flask import Flask, request, jsonify
+from flask_sqlalchemy import SQLAlchemy
+from flask_cors import CORS
 
-const API_URL = process.env.REACT_APP_API_URL;
+app = Flask(__name__)
+CORS(app)
 
-function App() {
-  const [inventario, setInventario] = useState([]);
-  const [movimientos, setMovimientos] = useState([]);
-  const [nombre, setNombre] = useState("");
-  const [cantidad, setCantidad] = useState("");
+# Configuración de base de datos (SQLite por simplicidad, puedes usar Postgres en producción)
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///inventario.db'
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+db = SQLAlchemy(app)
 
-  useEffect(() => {
-    axios.get(`${API_URL}/inventario`)
-      .then(res => setInventario(res.data))
-      .catch(err => console.error("Error cargando inventario:", err));
-  }, []);
+# Modelo de producto
+class Producto(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    nombre = db.Column(db.String(100), unique=True, nullable=False)
+    cantidad = db.Column(db.Integer, default=0)
 
-  const agregar = async () => {
-    if (!nombre || !cantidad) return;
-    await axios.post(`${API_URL}/agregar`, {
-      nombre,
-      cantidad: parseInt(cantidad)
-    });
-    setInventario(prev => {
-      const idx = prev.findIndex(i => i.nombre === nombre);
-      if (idx >= 0) {
-        const copia = [...prev];
-        copia[idx].cantidad += parseInt(cantidad);
-        return copia;
-      }
-      return [...prev, { nombre, cantidad: parseInt(cantidad) }];
-    });
-    setMovimientos(prev => [
-      ...prev,
-      { tipo: "Ingreso", nombre, cantidad: parseInt(cantidad), fecha: new Date().toLocaleString() }
-    ]);
-    setNombre("");
-    setCantidad("");
-  };
+# Inicializar base de datos
+with app.app_context():
+    db.create_all()
 
-  const retirar = async () => {
-    if (!nombre || !cantidad) return;
-    await axios.post(`${API_URL}/retirar`, {
-      nombre,
-      cantidad: parseInt(cantidad)
-    });
-    setInventario(prev => {
-      const idx = prev.findIndex(i => i.nombre === nombre);
-      if (idx >= 0) {
-        const copia = [...prev];
-        const nuevaCantidad = copia[idx].cantidad - parseInt(cantidad);
-        if (nuevaCantidad <= 0) {
-          copia.splice(idx, 1); // elimina el producto si llega a 0
-        } else {
-          copia[idx].cantidad = nuevaCantidad;
-        }
-        return copia;
-      }
-      return prev;
-    });
-    setMovimientos(prev => [
-      ...prev,
-      { tipo: "Egreso", nombre, cantidad: parseInt(cantidad), fecha: new Date().toLocaleString() }
-    ]);
-    setNombre("");
-    setCantidad("");
-  };
+# Ruta: obtener inventario completo
+@app.route("/inventario", methods=["GET"])
+def obtener_inventario():
+    productos = Producto.query.all()
+    return jsonify([{"nombre": p.nombre, "cantidad": p.cantidad} for p in productos])
 
-  const exportarExcel = () => {
-    const hoja = XLSX.utils.json_to_sheet(movimientos);
-    const libro = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(libro, hoja, "Movimientos");
-    const excelBuffer = XLSX.write(libro, { bookType: "xlsx", type: "array" });
-    const blob = new Blob([excelBuffer], { type: "application/octet-stream" });
-    saveAs(blob, "movimientos_inventario.xlsx");
-  };
+# Ruta: agregar producto o sumar stock
+@app.route("/agregar", methods=["POST"])
+def agregar_producto():
+    data = request.json
+    nombre = data.get("nombre")
+    cantidad = int(data.get("cantidad", 0))
 
-  return (
-    <Container maxWidth="md" sx={{ mt: 4 }}>
-      <Typography variant="h4" gutterBottom>Inventario</Typography>
+    producto = Producto.query.filter_by(nombre=nombre).first()
+    if producto:
+        producto.cantidad += cantidad
+    else:
+        producto = Producto(nombre=nombre, cantidad=cantidad)
+        db.session.add(producto)
 
-      <Stack direction="row" spacing={2} mb={3}>
-        <TextField
-          label="Nombre"
-          value={nombre}
-          onChange={e => setNombre(e.target.value)}
-        />
-        <TextField
-          type="number"
-          label="Cantidad"
-          value={cantidad}
-          onChange={e => setCantidad(e.target.value)}
-        />
-        <Button variant="contained" color="success" onClick={agregar}>Agregar</Button>
-        <Button variant="contained" color="error" onClick={retirar}>Retirar</Button>
-      </Stack>
+    db.session.commit()
+    return jsonify({"mensaje": "Producto actualizado", "nombre": producto.nombre, "cantidad": producto.cantidad})
 
-      <Typography variant="h6">Stock actual</Typography>
-      <ul>
-        {inventario.map((item, i) => (
-          <li key={i}>{item.nombre} — {item.cantidad}</li>
-        ))}
-      </ul>
+# Ruta: retirar producto o descontar stock
+@app.route("/retirar", methods=["POST"])
+def retirar_producto():
+    data = request.json
+    nombre = data.get("nombre")
+    cantidad = int(data.get("cantidad", 0))
 
-      <Typography variant="h6" sx={{ mt: 3 }}>Movimientos</Typography>
-      <Paper sx={{ mt: 1 }}>
-        <Table>
-          <TableHead>
-            <TableRow>
-              <TableCell>Tipo</TableCell>
-              <TableCell>Producto</TableCell>
-              <TableCell>Cantidad</TableCell>
-              <TableCell>Fecha</TableCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {movimientos.map((m, i) => (
-              <TableRow key={i}>
-                <TableCell>{m.tipo}</TableCell>
-                <TableCell>{m.nombre}</TableCell>
-                <TableCell>{m.cantidad}</TableCell>
-                <TableCell>{m.fecha}</TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </Paper>
+    producto = Producto.query.filter_by(nombre=nombre).first()
+    if producto and producto.cantidad >= cantidad:
+        producto.cantidad -= cantidad
+        if producto.cantidad == 0:
+            db.session.delete(producto)
+        db.session.commit()
+        return jsonify({"mensaje": "Producto retirado", "nombre": nombre, "cantidad": producto.cantidad if producto else 0})
+    else:
+        return jsonify({"error": "Stock insuficiente o producto no encontrado"}), 400
 
-      <Button variant="outlined" sx={{ mt: 2 }} onClick={exportarExcel}>
-        Exportar a Excel
-      </Button>
-    </Container>
-  );
-}
-
-export default App;
+if __name__ == "__main__":
+    app.run(debug=True)
